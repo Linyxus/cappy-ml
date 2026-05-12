@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SPC_CHANNEL="https://linyxus.github.io/scala3-py/apps/spc.json"
+CACHE_DIR=".cappy-cache"
+
+usage() {
+  cat <<'EOF'
+cappy — compile and run Scala scripts via the Scala-Py backend.
+
+Usage:
+  ./cappy run <file.scala>   Compile <file.scala> to .cappy-cache/ then run it.
+  ./cappy help               Show this message.
+
+Requires:
+  - uv         (https://docs.astral.sh/uv/)
+  - coursier   `cs` command (https://get-coursier.io/)
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: required command '$1' not found in PATH" >&2
+    echo "  $2" >&2
+    exit 1
+  fi
+}
+
+if [ $# -eq 0 ]; then
+  usage
+  exit 0
+fi
+
+cmd="$1"
+shift
+
+case "$cmd" in
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+  run)
+    require_cmd uv "Install uv: https://docs.astral.sh/uv/"
+    require_cmd cs "Install coursier: https://get-coursier.io/"
+
+    if [ $# -lt 1 ]; then
+      echo "error: 'run' requires a Scala source file" >&2
+      echo >&2
+      usage >&2
+      exit 1
+    fi
+
+    src="$1"
+    if [ ! -f "$src" ]; then
+      echo "error: file not found: $src" >&2
+      exit 1
+    fi
+
+    base="$(basename "$src")"
+    name="${base%.scala}"
+    if [ "$name" = "$base" ]; then
+      echo "error: expected a .scala file, got: $src" >&2
+      exit 1
+    fi
+
+    # Compile the entry file together with every other .scala file under
+    # the same directory tree, so cross-file references (e.g. a facade
+    # module in a subpackage) resolve. The entry file determines the
+    # bundled output we run.
+    src_dir="$(cd "$(dirname "$src")" && pwd)"
+    sources=()
+    while IFS= read -r -d '' f; do
+      sources+=("$f")
+    done < <(find "$src_dir" -type f -name '*.scala' -print0)
+
+    mkdir -p "$CACHE_DIR"
+    cs launch --channel "$SPC_CHANNEL" spc -- -scalapy -d "$CACHE_DIR" "${sources[@]}"
+
+    out_py="$CACHE_DIR/$name.py"
+    if [ ! -f "$out_py" ]; then
+      echo "error: expected output not found: $out_py" >&2
+      exit 1
+    fi
+
+    exec uv run python "$out_py"
+    ;;
+  *)
+    echo "error: unknown command: $cmd" >&2
+    echo >&2
+    usage >&2
+    exit 1
+    ;;
+esac
