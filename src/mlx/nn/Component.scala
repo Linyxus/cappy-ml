@@ -1,6 +1,20 @@
 package mlx.nn
 
 import scala.python.*
+import mlx.core.{Tensor, DataType}
+
+/** Canonical handle to the Python `mlx.nn` module. Shared by every layer
+ *  facade in this package — keeps the `_nn.Foo(...)` factory dispatch in
+ *  one place instead of re-declaring it per file. */
+@extern("mlx.nn") private[nn] object _nn extends PyDynamic
+
+/** Untyped cast to `PyDynamic` for raw Python calls. Used inside layer
+ *  facades whose bodies need to bridge both `Tensor[DT]` (whose `toPy`
+ *  lives in `mlx.core`) and `Component` (whose `toPy` lives here) — a
+ *  wildcard import of either side would shadow the other. `asPy` is
+ *  package-private to `mlx.nn` and `inline`, so it collapses to a no-op
+ *  cast at every call site. */
+private[nn] inline def asPy[T](x: T): PyDynamic = x.asInstanceOf[PyDynamic]
 
 // ---------------------------------------------------------------------------
 // Facade for `mlx.nn.Module`.
@@ -165,3 +179,23 @@ extension (c: Component)
   /** Same, but also map each matched entry through `mapFn`. */
   inline def filterAndMap(filterFn: Any, mapFn: Any): PyDynamic =
     c.toPy.filter_and_map(filterFn, mapFn)
+
+  // --- forward pass (callable syntax) ----------------------------------
+  //
+  // Single `apply` extension on the *base* type. Every layer facade
+  // inherits it through subtyping — so `linear(x)`, `relu(x)`,
+  // `mlp(x)`, `layerNorm(x)` all dispatch through here without each
+  // layer needing its own `apply` extension. (Multiple same-named
+  // `apply` extensions across sibling subtypes would not disambiguate
+  // by receiver type.) Layers whose forward pass doesn't fit this
+  // signature — `Embedding` (changes dtype) and `MultiHeadAttention`
+  // (takes 3+ tensors) — expose their forward under a different name.
+
+  /** Forward pass: `layer(x)` in Scala → `layer(x)` in Python.
+   *  We dispatch via `__call__` explicitly because Scala's `pd(args)`
+   *  syntax desugars to `pd.apply(args)`, which Scala-Py compiles to a
+   *  literal Python `pd.apply(args)` — and that resolves to
+   *  `Module.apply` (parameter-update), not the forward pass. Naming
+   *  `__call__` reaches Python's call protocol directly. */
+  inline def apply[DT <: DataType](x: Tensor[DT]): Tensor[DT] =
+    c.toPy.__call__(asPy(x)).asInstanceOf[Tensor[DT]]
