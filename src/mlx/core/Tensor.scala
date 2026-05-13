@@ -25,9 +25,6 @@ final class Float32   extends DataType
 final class Float64   extends DataType
 final class BFloat16  extends DataType
 
-sealed trait IntegerDT  extends DataType
-sealed trait FloatingDT extends DataType
-
 trait DataTypeInfo[DT <: DataType]:
   type ItemType <: Boolean | Int | Long | Double
   val dtype: PyDynamic
