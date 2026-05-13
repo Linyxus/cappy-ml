@@ -2,6 +2,166 @@ package mlx.nn
 
 import scala.python.*
 
+// ---------------------------------------------------------------------------
+// Facade for `mlx.nn.Module`.
+// ---------------------------------------------------------------------------
+
 @extern("mlx.nn", "Module")
 class Component:
-  val training: Boolean = native
+
+  // --- properties (Python @property) ----------------------------------
+
+  /** Python `training` attribute — `true` iff this module is in train mode. */
+  @name("training") val isTrainingMode: Boolean = native
+
+  /** Module state: parameters + buffers as a nested Python dict/list. */
+  val state: PyDynamic = native
+
+  // --- parameter collections ------------------------------------------
+
+  /** Every registered `mx.array` parameter, as a nested Python dict/list. */
+  def parameters(): PyDynamic = native
+
+  /** Subset of `parameters()` that is not frozen. */
+  @name("trainable_parameters") def trainableParameters(): PyDynamic = native
+
+  // --- module hierarchy ------------------------------------------------
+
+  /** Direct child `Module` instances (Python iterable). */
+  def children(): PyDynamic = native
+
+  /** Flat list of every contained module (including `this`). */
+  def modules(): PyDynamic = native
+
+  /** `(dotted-name, module)` pairs covering the full tree. */
+  @name("named_modules") def namedModules(): PyDynamic = native
+
+  /** Submodules that themselves contain no further nested modules. */
+  @name("leaf_modules") def leafModules(): PyDynamic = native
+
+  // --- training mode (eval has one signature; train is overloaded) -----
+
+  /** Switch to evaluation mode. Equivalent to `train(false)`. */
+  def eval(): Component = native
+
+  // --- weight save ----------------------------------------------------
+
+  /** Save weights to a `.npz` or `.safetensors` file path. */
+  @name("save_weights") def saveWeights(file: String): Unit = native
+
+  // --- functional (apply_to_modules has one signature) ----------------
+
+  /** Run `applyFn(name, module)` across this module and every descendant. */
+  @name("apply_to_modules") def applyToModules(applyFn: Any): Component = native
+
+// ---------------------------------------------------------------------------
+// Extension surface — Scala-side dispatch for the overloaded methods.
+//
+// Every member here is `inline`, so the body is spliced into the caller —
+// no static-method call, no allocation, just a direct `Dynamic` dispatch
+// to the Python attribute. `toPy` is itself an inline no-op cast, so a
+// call like `m.freeze()` collapses to `m.asInstanceOf[PyDynamic].freeze()`.
+// ---------------------------------------------------------------------------
+
+extension (c: Component)
+
+  /** Lift `c` back to a raw `PyDynamic` for un-typed Python calls. */
+  inline def toPy: PyDynamic = c.asInstanceOf[PyDynamic]
+
+  // --- train (overloaded over `mode`) ---------------------------------
+
+  /** Switch to training mode. */
+  inline def train(): Component =
+    c.toPy.train()
+    c
+  /** Switch to training mode if `mode`, else evaluation mode. */
+  inline def train(mode: Boolean): Component =
+    c.toPy.train(mode)
+    c
+
+  // --- freeze / unfreeze (keyword-only args in Python) ----------------
+
+  inline def freeze(): Component =
+    c.toPy.freeze()
+    c
+  inline def freeze(recurse: Boolean): Component =
+    c.toPy.freeze(recurse = recurse)
+    c
+  inline def freeze(recurse: Boolean, strict: Boolean): Component =
+    c.toPy.freeze(recurse = recurse, strict = strict)
+    c
+
+  inline def unfreeze(): Component =
+    c.toPy.unfreeze()
+    c
+  inline def unfreeze(recurse: Boolean): Component =
+    c.toPy.unfreeze(recurse = recurse)
+    c
+  inline def unfreeze(recurse: Boolean, strict: Boolean): Component =
+    c.toPy.unfreeze(recurse = recurse, strict = strict)
+    c
+
+  // --- updates (optional `strict` flag) -------------------------------
+
+  /** Replace parameters in-place from a nested dict (e.g. from `parameters()`). */
+  inline def update(parameters: PyDynamic): Component =
+    c.toPy.update(parameters)
+    c
+  inline def update(parameters: PyDynamic, strict: Boolean): Component =
+    c.toPy.update(parameters, strict = strict)
+    c
+
+  /** Replace child modules in-place from a nested dict (e.g. from `children()`). */
+  inline def updateModules(modules: PyDynamic): Component =
+    c.toPy.update_modules(modules)
+    c
+  inline def updateModules(modules: PyDynamic, strict: Boolean): Component =
+    c.toPy.update_modules(modules, strict = strict)
+    c
+
+  // --- weight load (file path vs. in-memory weight list) --------------
+
+  /** Load weights from a `.npz` / `.safetensors` file path. */
+  inline def loadWeights(file: String): Component =
+    c.toPy.load_weights(file)
+    c
+  inline def loadWeights(file: String, strict: Boolean): Component =
+    c.toPy.load_weights(file, strict = strict)
+    c
+  /** Load weights from a `list[(name, mx.array)]`. */
+  inline def loadWeights(weights: PyDynamic): Component =
+    c.toPy.load_weights(weights)
+    c
+  inline def loadWeights(weights: PyDynamic, strict: Boolean): Component =
+    c.toPy.load_weights(weights, strict = strict)
+    c
+
+  // --- dtype (optional predicate) -------------------------------------
+
+  /** Cast parameters to `dtype` (by default, floating-point only). */
+  inline def setDtype(dtype: PyDynamic): Component =
+    c.toPy.set_dtype(dtype)
+    c
+  /** Cast parameters that satisfy `predicate: dtype -> bool`. */
+  inline def setDtype(dtype: PyDynamic, predicate: Any): Component =
+    c.toPy.set_dtype(dtype, predicate)
+    c
+
+  // --- functional (apply has optional filterFn; same for filter_and_map)
+
+  /** Apply `mapFn` to every (filtered) parameter and update in-place.
+   *  Mapped to Python `Module.apply`; the Scala name avoids clashing with
+   *  the `def apply` callable syntax that subclasses use for a forward pass. */
+  inline def applyToParameters(mapFn: Any): Component =
+    c.toPy.apply(mapFn)
+    c
+  inline def applyToParameters(mapFn: Any, filterFn: Any): Component =
+    c.toPy.apply(mapFn, filterFn)
+    c
+
+  /** Recursively gather module contents that satisfy `filterFn`. */
+  inline def filterAndMap(filterFn: Any): PyDynamic =
+    c.toPy.filter_and_map(filterFn)
+  /** Same, but also map each matched entry through `mapFn`. */
+  inline def filterAndMap(filterFn: Any, mapFn: Any): PyDynamic =
+    c.toPy.filter_and_map(filterFn, mapFn)
