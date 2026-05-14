@@ -2,7 +2,7 @@ import scala.python.*
 import mlx.utils.*
 import mlx.core.*
 
-@main def runMain(): Unit =
+@main def runTestTensor(): Unit =
 
   // ====================================================================
   // 1. Construction (companion factories)
