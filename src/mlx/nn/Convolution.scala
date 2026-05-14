@@ -1,7 +1,7 @@
 package mlx.nn
 
 import scala.python.*
-import mlx.core.IsSizeType
+import mlx.utils.IsSizeType
 
 // ---------------------------------------------------------------------------
 // Convolution — `Conv1d` and `Conv2d`. Forward pass uses the standard
